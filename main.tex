@@ -1,0 +1,218 @@
+\documentclass[12pt, a4paper]{article}
+\usepackage[utf8]{inputenc}
+\usepackage[margin=1in]{geometry}
+\usepackage{setspace}
+\usepackage{amsmath}
+\usepackage{amssymb}
+\usepackage{xcolor}
+\usepackage{tipa}
+
+% Formatting for readability
+\onehalfspacing
+\setlength{\parindent}{0pt}
+\setlength{\parskip}{1em}
+
+% Custom command for emphasis during speech
+\newcommand{\speak}[1]{\textbf{\textcolor{blue}{#1}}} 
+\newcommand{\note}[1]{\textit{\textcolor{gray}{[Note: #1]}}} 
+
+\title{Oral Exam Script: Program Analysis (Expanded)}
+\author{Candidate}
+\date{\today}
+
+\begin{document}
+
+\maketitle
+
+\section*{Topic 1: Type Analysis (Chapter 3)}
+
+\speak{1. Overview}
+I will discuss Type Analysis for the TIP language. Since TIP lacks explicit type declarations, we must infer types to ensure safety. We want to prevent errors like applying arithmetic to pointers or dereferencing integers.
+
+Our goal is "typability": we generate equality constraints from the AST, and if a solution exists, the program is safe.
+
+\speak{2. The Type Language Grammar}
+First, we must define the grammar for types, denoted as $\tau$.
+The grammar includes:
+\begin{itemize}
+    \item \textbf{Basic Types:} \texttt{int}
+    \item \textbf{Pointers:} $\uparrow \tau$ (a pointer to type $\tau$)
+    \item \textbf{Functions:} $(\tau_1, \dots, \tau_n) \rightarrow \tau$
+    \item \textbf{Type Variables:} $\alpha, \beta, \dots$ (used for inference)
+    \item \textbf{Recursive Types:} $\mu \alpha . \tau$
+    \item \textbf{Records:} $\{ id_1 : \tau_1, \dots, id_n : \tau_n \}$
+\end{itemize}
+
+\speak{Example: Recursive Types}
+Standard finite types cannot describe recursive structures. We use \speak{Regular Types} (infinite trees) represented by the $\mu$ binder.
+\newline
+\textbf{Example:} A recursive function \texttt{foo} might have the type:
+$$ \mu t . (\uparrow \text{int}, t) \rightarrow \text{int} $$
+Here, $t$ represents the function type itself appearing inside the arguments.
+
+\speak{Example: Polymorphism}
+We also see \speak{Parametric Polymorphism} via free type variables.
+\newline
+\textbf{Example:} Consider a function \texttt{store(a,b) \{ *b = a; return 0; \}}.
+Its inferred type is:
+$$ (\alpha, \uparrow \alpha) \rightarrow \text{int} $$
+This means it works for \textit{any} type $\alpha$, as long as the second argument is a pointer to the first.
+
+\speak{3. Constraint Generation}
+We assign a type variable $[[E]]$ to every node $E$ in the AST and generate constraints.
+Some key rules include:
+
+\begin{itemize}
+    \item \textbf{Literals:} $[[\text{int}]] = \text{int}$ and $[[\text{input}]] = \text{int}$.
+    
+    \item \textbf{Allocations:} For an allocation `alloc E`:
+    $$ [[\text{alloc } E]] = \uparrow [[E]] $$
+    
+    \item \textbf{Pointer Operations:} For a dereference `*E`:
+    $$ [[E]] = \uparrow [[*E]] $$
+    This enforces that $E$ is a pointer and links it to the result type.
+    
+    \item \textbf{Null:} The null pointer is flexible. We generate a \textbf{fresh} type variable $\alpha$:
+    $$ [[\text{null}]] = \uparrow \alpha $$
+    
+    \item \textbf{Functions:} For a function definition $X(X_1 \dots X_n) \{ \text{return } E \}$:
+    $$ [[X]] = ([[X_1]], \dots, [[X_n]]) \rightarrow [[E]] $$
+\end{itemize}
+
+\speak{4. Unification Algorithm}
+To solve these constraints, we use the \speak{Unification Algorithm} based on Union-Find.
+We iterate through constraints and \texttt{UNIFY} terms.
+\begin{itemize}
+    \item \textbf{Priority:} Proper types (like \texttt{int}) beat type variables. If we unify $\alpha = \text{int}$, the representative becomes \texttt{int}.
+    \item \textbf{Cycles:} If we encounter a cycle like $X = \uparrow X$, the solver constructs a recursive type ($\mu \dots$) rather than crashing.
+\end{itemize}
+
+\speak{5. Record Types}
+For records, we don't know which fields exist. We handle this using an "absent field" type, denoted $\circ$.
+\newline
+\textbf{Field Lookup Rule ($E.X$):}
+1. We assume the record \textit{might} contain all fields $f_1 \dots f_m$.
+2. We generate $[[E]] = \{ f_1: \gamma_1, \dots, f_m: \gamma_m \}$.
+3. If the field is accessed, $\gamma = [[E.X]]$. If not, $\gamma$ is a fresh variable.
+4. \textbf{Crucial Check:} After unification, we verify that $[[E.X]] \neq \circ$ to ensure the field actually exists.
+
+\speak{6. Limitations \& Solutions}
+Finally, we must acknowledge the limitations of this specific analysis:
+
+\begin{enumerate}
+    \item \speak{Flow-Insensitivity}
+    The analysis ignores execution order. It assumes a variable has exactly one type throughout the entire function.
+    \newline
+    \textbf{Example:} If you assign an integer to $x$ and later assign a pointer to $x$, this analysis will reject the program, even if the usages are safe in temporal order. To fix this, we would need flow-sensitive analysis (like SSA).
+
+    \item \speak{Polymorphism (The "Monomorphic" Problem)}
+    Our current analysis is \textbf{monomorphic}.
+    \newline
+    \textbf{Problem:} Consider the identity function \texttt{id(x) \{ return x; \}}. If we call it with an \texttt{int}, the type variable for $x$ unifies with \texttt{int}. If we later call it with a \texttt{pointer}, unification fails because $\text{int} \neq \text{pointer}$. The function cannot be reused for different types.
+
+    \speak{Solution: Let-Polymorphism}
+    To solve this, we can use \textbf{Let-Polymorphism} (common in languages like OCaml or ML).
+    \begin{itemize}
+        \item \textbf{Generalization:} When a function is defined (e.g., in a \texttt{let} binding), we generalize its free type variables into a "type scheme" (e.g., $\forall \alpha . \alpha \rightarrow \alpha$).
+        \item \textbf{Instantiation:} Every time the function is \textit{used}, we replace the quantified variables ($\alpha$) with \textbf{fresh} type variables.
+        \item \textbf{Result:} One use of \texttt{id} gets fresh variables that unify with \texttt{int}, and the next use gets \textit{different} fresh variables that unify with \texttt{pointer}.
+    \end{itemize}
+    \textbf{Trade-off:} While flexible, this increases the worst-case complexity of the analysis from almost-linear to \textbf{exponential}.
+
+    \item \speak{Runtime Errors}
+    Lastly, typability does not guarantee complete safety. It does not catch null pointer dereferences, reading uninitialized variables, or division by zero.
+\end{enumerate}
+
+\section*{Topic 2: Dataflow Analysis \& Monotone Frameworks (Detailed)}
+
+\speak{1. The Monotone Framework}
+I will now discuss Dataflow Analysis using the \speak{Monotone Framework}.
+Instead of inventing a new algorithm for every analysis, we define a general framework on a \speak{Complete Lattice} $(L, \sqsubseteq)$.
+
+The framework requires two main ingredients:
+\begin{enumerate}
+    \item A \speak{Transfer Function} $f: L \rightarrow L$ for each node, which models how an instruction affects the state. Crucially, this function must be \textbf{monotone}: if $x \sqsubseteq y$, then $f(x) \sqsubseteq f(y)$.
+    \item A \speak{Join Operator} ($\sqcup$) to merge information from different paths (e.g., at the end of an `if` statement).
+\end{enumerate}
+
+We solve the system using the \speak{Work-List Algorithm}. We initialize all nodes to $\bot$ (bottom), put them in a list, and iteratively update them using the transfer functions.
+\textbf{Guarantee:} If the lattice has \speak{Finite Height} and functions are monotone, this algorithm is guaranteed to terminate with the unique Least Fixed Point.
+
+\speak{2. The Four Classic Analyses}
+The framework categorizes standard analyses based on \textbf{Direction} (Forward/Backward) and \textbf{Quantification} (May/Must).
+
+\begin{itemize}
+    \item \speak{Reaching Definitions (Forward, May)}
+    \begin{itemize}
+        \item \textbf{Goal:} Find which assignments (definitions) might reach a specific program point without being overwritten.
+        \item \textbf{Lattice:} Sets of definition pairs $(Var, Label)$.
+        \item \textbf{Join:} Union ($\cup$). Since it is a "May" analysis, we want \textit{any} definition that reaches along \textit{any} path.
+        \item \textbf{Use:} Def-use chains for optimization.
+    \end{itemize}
+
+    \item \speak{Available Expressions (Forward, Must)}
+    \begin{itemize}
+        \item \textbf{Goal:} Determine which expressions have definitely been computed and not modified.
+        \item \textbf{Join:} Intersection ($\cap$). Since it is a "Must" analysis, an expression is only available if it comes from \textit{all} incoming paths.
+        \item \textbf{Use:} Common Subexpression Elimination (CSE).
+    \end{itemize}
+
+    \item \speak{Live Variables (Backward, May)}
+    \begin{itemize}
+        \item \textbf{Goal:} Determine if a variable holds a value that will be read (used) in the future before being overwritten.
+        \item \textbf{Direction:} Backward. We start from the "use" and propagate back to the "def".
+        \item \textbf{Join:} Union ($\cup$). If a variable is live on \textit{any} future path, it is live here.
+        \item \textbf{Use:} Dead Code Elimination (remove assignments to non-live variables).
+    \end{itemize}
+
+    \item \speak{Very Busy Expressions (Backward, Must)}
+    \begin{itemize}
+        \item \textbf{Goal:} Find expressions that are evaluated on \textit{all} future paths from the current point.
+        \item \textbf{Join:} Intersection ($\cap$).
+        \item \textbf{Use:} Code Hoisting (moving computations earlier to save size).
+    \end{itemize}
+\end{itemize}
+
+\speak{3. Handling Infinite Lattices (Widening)}
+Standard dataflow analysis assumes the lattice has \speak{finite height} to guarantee termination. However, more powerful analyses, like \speak{Interval Analysis} (which tracks variable ranges $[min, max]$), operate on lattices of \speak{Infinite Height}.
+
+\textbf{The Problem:} Consider a loop `while(true) { x++ }`. The intervals would evolve: $[0,0] \to [0,1] \to [0,2] \dots$. The chain never stabilizes, so the standard algorithm loops forever.
+
+\textbf{The Solution:} We use \speak{Widening ($\nabla$)}.
+\begin{itemize}
+    \item \textbf{Mechanism:} $\nabla$ is an acceleration operator. If it sees bounds growing unstable (e.g., $0 \to 1 \to 2$), it jumps directly to infinity ($[0, \infty]$).
+    \item \textbf{Result:} This guarantees termination but loses precision.
+    \item \textbf{Refinement ($\Delta$):} After widening stabilizes, we apply \speak{Narrowing ($\Delta$)}. We run a few standard iterations downwards from infinity to recover tighter bounds while remaining sound.
+\end{itemize}
+
+\speak{4. Path Sensitivity}
+Standard dataflow analysis is typically \textbf{path-insensitive}. It merges information from all incoming branches at join points (like the end of an `if/else`). While this ensures efficiency, it frequently results in a loss of precision. To fix this, we have three distinct techniques.
+
+\begin{enumerate}
+    \item \speak{Control Sensitivity (Refining with Guards)}
+    Standard analysis propagates the abstract state into both branches of a conditional equally. Control sensitivity exploits the \textbf{branch conditions} (guards) to filter these states.
+    \begin{itemize}
+        \item \textbf{Mechanism:} We treat the branch condition as an \textit{assertion}. If we have `if (x \textgreater 0)`, we restrict the abstract value of $x$ in the "true" branch to exclude non-positive numbers.
+        \item \textbf{Benefit:} If the restricted state becomes empty ($\bot$), we prove that this branch is \textbf{unreachable} (dead code).
+    \end{itemize}
+
+    \item \speak{Path Sensitivity (Distinguishing History)}
+    Even with control sensitivity, merging states at join points can be destructive.
+    \newline
+    \textbf{The Merge Problem:} Imagine one path sets $x=1$ and another sets $x=-1$. If we merge these into an interval $[-1, 1]$ and then compute $x*x$, we get $[0, 1]$. But strictly speaking, on \textit{both} original paths, $x*x$ was exactly $1$. The merge lost the specific values.
+    \begin{itemize}
+        \item \textbf{Solution:} Path sensitivity maintains separate abstract states for different paths reaching the same program point, rather than joining them immediately.
+        \item \textbf{Trade-off:} This prevents "pollution" from imprecise paths but can lead to an exponential explosion in the number of states tracked.
+    \end{itemize}
+
+    \item \speak{Relational Analysis (Tracking Dependencies)}
+    Standard analyses (like Interval Analysis) are \textbf{non-relational} (or "Independent Attribute"). They track invariants for each variable in isolation (e.g., $x \in [0, 10]$ and $y \in [0, 10]$).
+    \newline
+    \textbf{The Limitation:} If the code is `if (x \textgreater y)`, a non-relational analysis cannot determine if this is true or false because it doesn't know the \textit{relationship} between $x$ and $y$.
+    \begin{itemize}
+        \item \textbf{Solution:} Relational Analysis tracks constraints \textit{between} variables, such as $x = y$ or $x < y + 5$.
+        \item \textbf{Example:} If we know $x = y$, we can prove `x \textgreater y` is impossible, identifying it as dead code—something impossible if we only looked at their ranges individually.
+    \end{itemize}
+\end{enumerate}
+
+\end{document}
