@@ -1,0 +1,157 @@
+\documentclass[11pt, a4paper]{article}
+\usepackage[utf8]{inputenc}
+\usepackage{amsmath, amssymb, amsthm}
+\usepackage{geometry}
+\usepackage{enumitem}
+\usepackage{xcolor}
+
+\geometry{left=2.5cm, right=2.5cm, top=2.5cm, bottom=2.5cm}
+
+\newcommand{\board}[1]{
+    \vspace{0.3cm}
+    \noindent\fbox{
+        \parbox{\dimexpr\linewidth-2\fboxsep-2\fboxrule\relax}{
+            \textbf{\color{blue}Write on the board:}\\
+            #1
+        }
+    }
+    \vspace{0.3cm}
+}
+
+\title{\textbf{Interprocedural Analysis and Context Sensitivity}}
+\author{Static Program Analysis}
+\date{}
+
+\begin{document}
+
+\maketitle
+
+\section*{Introduction (Approx. 2 Minutes)}
+
+Our goal is to analyze whole programs containing multiple functions and function calls. When we do this, we can no longer treat function calls as "black boxes" where we assume the worst-case scenario (like returning $\top$). We need to model the flow of data \textit{into} functions (parameters) and \textit{out} of functions (return values). \\
+\\ To keep things manageable, we rely on a specific normalization of the TIP language. We assume all function calls happen in isolation within an assignment.
+
+\board{
+$$X = f(E_1, \dots, E_n);$$
+} \\
+This normalization simplifies our Control Flow Graph construction significantly because we don't have to deal with nested calls inside expressions.
+
+\section*{8.1 Interprocedural Control Flow Graphs (Approx. 4 Minutes)}
+
+Let's look at how we construct the Interprocedural CFG. We take the CFGs of individual functions and "glue" them together. \\
+\\ For every function call statement in the program, we split it into two distinct nodes.
+
+\board{
+\textbf{1. The Call Node:} Represents the connection from the caller to the entry of $f$. \\
+\textbf{2. The After-Call Node:} Where execution resumes after returning from $f$.
+} \\
+Conceptually, the flow looks like this:
+\begin{enumerate}
+    \item The control flows from the \textbf{Call Node} to the distinct \textbf{Entry Node} of the callee function.
+    \item The function executes.
+    \item The control flows from the \textbf{Exit Node} of the callee back to the \textbf{After-Call Node}.
+\end{enumerate} 
+There is one crucial addition: we add a special edge directly connecting the Call Node to the After-Call Node.
+
+\board{
+Draw a diagram:
+\begin{center}
+    Call Node ($v'$) $\rightarrow$ \textit{(Edge to Entry)} \\
+    $\downarrow$ \textit{(Local edge)} \\
+    After-Call Node ($v$) $\leftarrow$ \textit{(Edge from Exit)}
+\end{center}
+} \\
+\\ This local edge is vital. It preserves the values of local variables from the caller that are \textit{not} involved in the function call. Without this, we would lose the state of local variables (like loop counters or temporary variables) while the function executes. \\
+\\ We also normalize return statements. A statement `return E;` is treated as an assignment to a special variable called `result`.
+
+\board{
+$$ \text{result} = E $$
+}
+
+\subsection*{Dataflow Constraints (Context Insensitive)}
+
+Now, let's look at the constraints for the Sign Analysis as our running example. This is the "naive" or \textbf{Context Insensitive} approach. \\
+\\ For a function entry node $v$, we must collect abstract values from \textit{all} possible call sites $w$.
+
+\board{
+\textbf{Constraint for Entry Node $v$:}
+$$ [[v]] = \bigsqcup_{w \in pred(v)} s_w $$
+where
+$$ s_w = \perp[b_1 \mapsto eval([[w]], E_1^w), \dots, b_n \mapsto eval([[w]], E_n^w)] $$
+} \\
+Here, $b_i$ are the formal parameters and $E_i^w$ are the actual arguments at call site $w$. We join ($\bigsqcup$) the states from all predecessors because the function could be called from anywhere. \\
+\\ For the return flow—at the after-call node $v$—we need to combine two things: the result from the function, and the local variables we saved earlier.
+
+\board{
+\textbf{Constraint for After-Call Node $v$:}
+$$ [[v]] = [[v']] [X \mapsto [[w]](\text{result})] $$
+\small{($v'$ is the call node, $w$ is the function exit node)}
+} \\
+This formula says: take the state from the call node $v'$ (restoring our locals), but update the variable $X$ with the value of `result` coming from the exit node $w$.
+
+\section*{8.2 The Problem: Context Insensitivity (Approx. 2 Minutes)}
+
+The approach I just described is \textbf{Context Insensitive}. It does not distinguish between different calls to the same function. This leads to the problem of \textbf{Interprocedurally Invalid Paths}. \\
+\\ Imagine a function `inc(x)` that returns `x+1`.
+\begin{itemize}
+    \item Call 1: `inc(0)` (Expects positive return)
+    \item Call 2: `inc(-5)` (Expects negative return)
+\end{itemize}
+Since we join the inputs at the entry node, the analysis thinks the input is $\{0, -\}$. Consequently, it thinks the output is $\{+, 0, -\}$. When we return to Call 1, we report that the result could be negative. This is imprecise. We effectively allowed data from Call 2 to flow back into Call 1.
+
+\section*{Context Sensitivity (Approx. 1 Minute)}
+
+To fix this, we need \textbf{Context Sensitivity}. We want to distinguish between different calls. We do this by lifting our lattice. Instead of just mapping nodes to states ($Node \to State$), we map nodes to a function from contexts to states.
+
+\board{
+$$ Context \to lift(State) $$
+}
+
+The choice of what $Context$ is defines the precision and complexity of our analysis.
+
+\section*{8.3 Call Strings Approach (Approx. 3 Minutes)}
+
+The first major strategy is the \textbf{Call Strings} approach (also known as $k$-CFA). \\
+\\ Here, a context is a tuple of call sites $(c_1, c_2, \dots)$ representing the call stack. \\ 
+\\ If we choose $k=1$, the context is simply the most recent call site. \\
+\\ This is logically equivalent to \textbf{Function Cloning}, where we create a copy of the function for every distinct place it is called. \\
+\\ Let's look at the constraint for a function entry node $v$ using Call Strings ($k=1$). We only merge information if the context matches the specific call node.
+
+\board{
+$$ [[v]](c) = \bigsqcup_{w \in pred(v), c=w} s_w^c $$
+}
+\\ Instead of joining \textit{all} predecessors, we only take the state from the predecessor $w$ that matches the current context $c$. This keeps the data separate.\\ \\ Similarly, at the after-call node, we only accept return values that match our current context, effectively filtering out the "invalid paths."
+
+\section*{8.4 Functional Approach (Approx. 3 Minutes)}
+
+The second strategy is the \textbf{Functional Approach}.
+While Call Strings distinguish calls based on \textit{where} they came from (control flow), the Functional Approach distinguishes calls based on \textit{data}. \\
+\\ We define the Context to be the Abstract State itself.
+
+\board{
+$$ Context = State $$
+Lattice: $State \to lift(State)$
+} \\
+\\ This views a function as a mapping from input states to output states—a \textbf{Function Summary}. \\
+\\ If we call `inc(0)` and `inc(0)` from two different places, the Call String approach analyzes it twice. The Functional approach sees the input state is the same $\{0\}$ and analyzes it once, reusing the result. \\
+\\ The constraint for the entry node becomes:
+
+\board{
+$$ [[v]](c) = \bigsqcup_{w \in pred(v), c = s_w} s_w $$
+} \\
+\\ Here, we effectively say: "If the state $s_w$ being passed from the caller matches the context $c$ we are currently analyzing, then propagate the data." \\
+\\ This approach offers optimal precision (equivalent to infinite inlining) but can be very expensive if the lattice of states is large.
+
+\section*{Conclusion (Approx. 1 Minute)}
+
+To summarize:
+\begin{itemize}
+    \item \textbf{Interprocedural Analysis} requires building a super-graph of all functions.
+    \item \textbf{Context Insensitive} analysis is fast but suffers from data flowing along invalid paths (mixing up callers).
+    \item \textbf{Call String Sensitivity ($k$-CFA)} separates calls based on the call stack (Control Flow).
+    \item \textbf{Functional Sensitivity} separates calls based on input values (Data Flow).
+\end{itemize}
+In practice, we often use heuristics to choose $k$ or select specific variables for the functional context to balance precision and performance. \\
+\\ Thank you.
+
+\end{document}

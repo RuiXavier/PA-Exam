@@ -1,0 +1,177 @@
+\documentclass[a4paper,12pt]{article}
+
+\usepackage[utf8]{inputenc}
+\usepackage{amsmath}
+\usepackage{amssymb}
+\usepackage{geometry}
+\usepackage{stmaryrd}
+\usepackage{xcolor}
+\usepackage{graphicx}
+
+\geometry{margin=1in}
+
+\newcommand{\constraints}[1]{[\![ #1 ]\!]}
+\newcommand{\typeptr}{\uparrow}
+\newcommand{\typefun}{\rightarrow}
+\newcommand{\freshvar}{\alpha}
+\newcommand{\absent}{\bullet}
+
+\title{\textbf{Type Analysis}}
+\date{}
+
+\begin{document}
+
+\maketitle
+
+\section*{Introduction (2 Minutes)}
+
+Today we are discussing \textbf{Type Analysis} for the TIP language. \\
+\\As we know from previous chapters, TIP does not have explicit type declarations. However, we implicitly expect operations to be reasonable. For example, we shouldn't try to add an integer to a function, or dereference a number.
+
+\begin{itemize}
+    \item \textbf{Goal:} We want to ensure that these "reasonable restrictions" hold during execution to prevent runtime errors.
+    \item \textbf{The Problem:} As established in Chapter 1, checking this perfectly is \textbf{undecidable}.
+    \item \textbf{The Solution:} We use a \textbf{conservative approximation}. We define a program as \textit{typable} if it satisfies a specific set of constraints.
+\end{itemize}
+\textbf{Write on Whiteboard:}
+Draw the "Sun" diagram (from the slides).
+\begin{figure}[h!]
+    \centering
+    \includegraphics[width=0.6\textwidth]{photo.png}
+    %\caption{Approximation of Type Analysis}
+\end{figure}
+\begin{itemize}
+    \item \textit{Inner Circle (Green):} Typable programs.
+    \item \textit{Outer Star (Yellow):} Programs with no runtime errors.
+    \item \textit{The Gap:} This is called \textbf{Slack}. Some valid programs will be rejected, but no invalid program will be accepted.
+\end{itemize}
+
+\section*{1. The Language of Types (3 Minutes)}
+
+To perform this analysis, we first need a formal language to describe the values in our program. \\
+\\ \textbf{Write on Whiteboard:}
+\[
+\text{Type} \to \text{int} \mid \typeptr \text{Type} \mid (\text{Type}, \dots, \text{Type}) \typefun \text{Type}
+\]
+We define types recursively:
+\begin{enumerate}
+    \item \textbf{int}: Integers.
+    \item \textbf{$\typeptr \tau$}: Pointers to a type $\tau$ (represented by the up-arrow).
+    \item \textbf{$(\tau_1, \dots) \typefun \tau_r$}: Functions taking arguments and returning a type.
+\end{enumerate}
+However, we have a problem. TIP allows recursive functions and data structures. A finite tree grammar isn't enough. We need \textbf{Regular Types} (essentially infinite trees that repeat). \\
+\\To express this notationally, we add type variables ($\alpha$) and a recursion operator ($\mu$): \\
+\\ \textbf{Write on Whiteboard:}
+\[
+\mu \alpha . (\typeptr \text{int}, \alpha) \typefun \text{int}
+\]
+This represents a function that takes a pointer to an int and... \textit{itself} as arguments.
+
+\section*{2. Generating Type Constraints (5 Minutes)}
+
+This is the core of the analysis. We traverse the program's Abstract Syntax Tree (AST) and generate equality constraints for every node. \\
+\\ For every identifier $X$ and every expression node $E$, we assign a type variable, denoted by double brackets: $\constraints{X}$ or $\constraints{E}$. \\
+\\ Let's look at the specific rules. \\
+\\ \textbf{Write on Whiteboard - Rapidly list these rules as you explain:}
+
+\subsection*{A. Basic Operations}
+We must distinguish between general binary operators and the equality operator, as they generate different constraints.
+
+\textbf{1. Arithmetic and Inequalities} ($E_1 \text{ op } E_2$ where $\text{op} \in \{+, -, >, \dots\}$):
+For most operators, we demand that both operands are integers and the result is an integer.
+\[
+\constraints{E_1} = \constraints{E_2} = \constraints{E_1 \text{ op } E_2} = \text{int}
+\]
+
+\textbf{2. Equality Checks} ($E_1 == E_2$):
+The equality operator is stricter about the result (it must be a boolean/integer condition), but more flexible about the inputs. The operands $E_1$ and $E_2$ do not have to be integers; they simply must unify with \textit{each other} (e.g., we can compare two pointers).
+\[
+\constraints{E_1} = \constraints{E_2} \quad \wedge \quad \constraints{E_1 == E_2} = \text{int}
+\]
+
+\subsection*{B. Pointers and Allocation}
+This is crucial.
+\begin{itemize}
+    \item \textbf{Alloc:} \texttt{alloc E} creates a pointer.
+    \[ \constraints{\text{alloc } E} = \typeptr \constraints{E} \]
+    \item \textbf{Address of:} \texttt{\&X} is also a pointer.
+    \[ \constraints{\&X} = \typeptr \constraints{X} \]
+    \item \textbf{Dereference:} \texttt{*E}. If we dereference $E$, then $E$ itself must be a pointer to the result.
+    \[ \constraints{E} = \typeptr \constraints{*E} \]
+\end{itemize}
+
+\subsection*{C. Functions}
+For a function definition $X(X_1, \dots, X_n) \{ \dots \text{return } E; \}$:
+\[
+\constraints{X} = (\constraints{X_1}, \dots, \constraints{X_n}) \typefun \constraints{E}
+\]
+The type of the function identifier matches its signature constructed from the parameters and the return body expression.
+
+\subsection*{D. The "Null" Problem}
+\texttt{null} is polymorphic—it can be a pointer to anything. We assign it a \textbf{fresh type variable} $\freshvar$ every time it appears.
+\[ \constraints{\text{null}} = \typeptr \freshvar \]
+
+\section*{3. Solving Constraints: Unification (3 Minutes)}
+
+Once we generate these constraints, we have a system of equations like $\constraints{X} = \constraints{Y}$ or $\constraints{X} = \typeptr \text{int}$.
+How do we solve them? We use the \textbf{Unification Algorithm}.
+
+\textbf{Speaker Notes:}
+This is efficient (almost linear time) using the \textbf{Union-Find} data structure.
+\begin{enumerate}
+    \item \textbf{Initialization:} We start by treating every type variable and term as being in its own set (invoking \texttt{MAKESET}).
+    \item \textbf{Processing Constraints:} For every equality $\tau_1 = \tau_2$, we use \texttt{FIND} to look up the \textbf{canonical representative} of each term's equivalence class.
+    \item \textbf{Merging:} We use \texttt{UNION} to merge the sets. Crucially, proper types (like \texttt{int} or function types) take precedence as representatives over variables.
+    \item \textbf{Type Errors:} If we attempt to \texttt{UNION} two sets that already have conflicting proper types as representatives (e.g., one represents \texttt{int} and the other represents $\typeptr \tau$), the algorithm reports a \textbf{Type Error}.
+\end{enumerate}
+
+\textbf{Example for Whiteboard:}
+Consider the code:
+\begin{verbatim}
+    p = alloc null;
+    *p = p;
+\end{verbatim}
+Let's generate constraints:\\
+1. $\constraints{\text{null}} = \typeptr \freshvar$\\
+2. $\constraints{\text{alloc null}} = \typeptr \constraints{\text{null}} = \typeptr \typeptr \freshvar$\\
+3. $\constraints{p} = \constraints{\text{alloc null}}$\\
+4. $\constraints{*p} = \constraints{p}$ (from assignment)\\
+5. $\constraints{p} = \typeptr \constraints{*p}$ (from dereference usage)\\ \\
+\textbf{The Recursive Step:}
+Combining 4 and 5 yields:
+\[ \constraints{p} = \typeptr \constraints{p} \]
+When the Union-Find algorithm processes this:
+\begin{itemize}
+    \item It unifies the set containing $\constraints{p}$ with the set containing the term $\typeptr \constraints{p}$.
+    \item The representative of $\constraints{p}$ becomes the term $\typeptr \dots$, which refers back to $\constraints{p}$.
+\end{itemize}
+This successfully describes the infinite (regular) type:
+\[ \constraints{p} = \mu \tau . \typeptr \tau \]
+\section*{4. Records and Limitations (2 Minutes)}
+
+\subsection*{Records}
+We can extend types to include records: $\{ id: \text{Type}, \dots \}$.
+However, dealing with field access \texttt{E.x} is tricky because we don't know if the field exists just by looking at the syntax.\\
+\\ We model this by assuming \textit{all} possible fields exist in the type, but some are marked as \textbf{absent} ($\absent$).
+\[
+\constraints{ \{ f:1 \} } = \{ f: \text{int}, g: \absent, h: \absent \dots \}
+\]
+If we try to access a field that resolves to $\absent$, that is a type error.
+
+\subsection*{Limitations}
+Finally, we must acknowledge the limitations of this analysis. \\
+\\ 1.  \textbf{Flow Insensitivity:}
+    \begin{verbatim}
+    var x;
+    x = alloc 1;  // x is pointer
+    x = 42;       // x is int
+    \end{verbatim}
+    This is valid in TIP, but our analysis assigns \textit{one} type variable $\constraints{x}$ to $x$. It cannot be both \texttt{int} and \texttt{ptr}. The program is rejected (Slack).\\
+\\ 2.  \textbf{Polymorphism:}
+    Our system is monomorphic. If we define a generic function \texttt{id(x) \{ return x; \}}, we calculate its constraints once. If we call it with an \texttt{int}, constraints say it returns \texttt{int}. If we later call it with a pointer, we get a unification error.
+    \textit{(Note: We could use Let-Polymorphism to fix this, but it makes complexity exponential).}
+
+\section*{Conclusion}
+To wrap up: We have built a static analysis that guarantees the absence of type errors. It is efficient, using Union-Find, but it is conservative—it will reject some valid programs (slack) due to flow-insensitivity and lack of polymorphism.
+
+\end{document}

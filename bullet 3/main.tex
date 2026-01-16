@@ -1,0 +1,140 @@
+\documentclass[a4paper,12pt]{article}
+\usepackage[utf8]{inputenc}
+\usepackage{geometry}
+\usepackage{amsmath}
+\usepackage{amssymb}
+\usepackage{enumitem}
+\usepackage{fancyhdr}
+
+\geometry{margin=1in}
+\pagestyle{fancy}
+\fancyhf{}
+\lhead{Program Slicing}
+\rfoot{Page \thepage}
+
+\begin{document}
+
+
+\section{Introduction \& Motivation (2 Minutes)}
+
+Today I will be talking about \textbf{Program Slicing}. \\
+\\ Let's start with a practical scenario. Imagine you have a program that computes the Sum, Product, Minimum, and Maximum of a set of numbers. You run it, and the "Product" output is wrong. \\
+\\ \textit{Write on Whiteboard}
+\begin{itemize}
+    \item \texttt{Product = ... // Bug!}
+\end{itemize}
+To fix this, you don't need to look at the code calculating the Sum or the Max. You only care about the lines of code that actually affect the "Product" variable. \\
+\\ \textbf{Definition:} 
+Informally, a \textbf{Program Slice} is a subset of a program that affects the values computed at a specific statement. If we execute the slice, it must yield the same result for that specific statement as the original program. \\
+\\ \textbf{Why is this useful?}
+\begin{enumerate}
+    \item \textbf{Debugging:} It helps developers focus only on relevant code.
+    \item \textbf{Parallelization:} Disjoint slices can run on different cores.
+    \item \textbf{Regression Testing:} If we change one line, we only need to re-test the tests that cover that slice.
+\end{enumerate}
+
+\hrule
+
+\section{Formal Definition (2 Minutes)}
+
+Let's formalize this. To define a slice, we need a \textbf{Slicing Criterion}. \\
+\\ \textit{Write on Whiteboard}
+$$ C = (n, V) $$
+\begin{itemize}
+    \item $n$: A statement in the program.
+    \item $V$: A set of variables accessed at $n$.
+\end{itemize}
+For example, if we have a statement on line 6: \texttt{output(x)}, our criterion is $(6, \{x\})$. \\
+\\ We determine if a program $P'$ is a valid slice of $P$ by looking at their \textbf{Execution Traces}. If $P$ executes statement $n$, $P'$ must execute $n$ the same number of times, and the values of the variables $V$ must be identical at each execution. \\
+\\ \textbf{Important Note:}
+It is formally \textbf{undecidable} to compute the \textit{minimal} slice of a program (due to Rice's Theorem/Halting problem). Therefore, in practice, we focus on approximate, safe solutions that might include a few extra statements but never miss a necessary one.
+
+\hrulefill
+
+\section{Intraprocedural Slicing: Data Flow Analysis (4 Minutes)}
+How do we compute this automatically? We start with \textbf{Intraprocedural Slicing} (slicing within a single function without calls). We use a fixpoint algorithm based on the Control Flow Graph (CFG). \\ 
+\\ First, we need to categorize how variables are used in each statement $s$.\\ \\ \textit{[Action: Write on Whiteboard]}
+\begin{itemize}
+    \item $VAR(s)$: The set of all variables appearing in $s$.
+    \item $DEF(s)$: Variables defined (assigned to) in $s$.
+    \item $REF(s)$: Variables referenced (read) in $s$.
+\end{itemize}
+With these definitions, we can compute two things: the \textbf{Relevant Variables} ($\mathcal{R}_C^0$) and the \textbf{Relevant Statements} ($\mathcal{S}_C^0$). \\
+\\ First, we calculate $\mathcal{R}_C^0(d)$, which tells us which variables are relevant immediately \textit{before} statement $d$ executes. \\
+\\ \textit{[Action: Write the Data Flow Equation on Whiteboard]}
+$$ \mathcal{R}_{C}^{0}(d) = \mathcal{R}_{C}^{0}(d) \cup \{v | v \in \mathcal{R}_{C}^{0}(f) \setminus DEF(d)\} \cup \{v \in REF(d) \text{ and } DEF(d) \cap \mathcal{R}_{C}^{0}(f) \neq \emptyset\} $$
+This equation works backwards from a successor node $f$:
+\begin{enumerate}
+    \item \textbf{Preservation:} If a variable is relevant at $f$ and is \textit{not} redefined in $d$, it remains relevant (it flows through).
+    \item \textbf{Generation:} If $d$ defines a variable that is relevant at $f$ ($DEF(d) \cap \mathcal{R}_{C}^{0}(f) \neq \emptyset$), then the variables used to calculate that definition ($REF(d)$) become relevant.
+\end{enumerate}
+Once we have the variables, we can determine the actual slice. We call this set $\mathcal{S}_C^0$—the set of \textbf{Relevant Statements}. \\
+\\ \textit{[Action: Write the Statement Equation on Whiteboard]}
+$$ \mathcal{S}_{C}^{0} = \{d | d \xrightarrow{CFG} f \text{ and } DEF(d) \cap \mathcal{R}_{C}^{0}(f) \neq \emptyset\} $$
+Simply put, a statement $d$ is included in the slice $\mathcal{S}_C^0$ if it defines a variable that is relevant at its successor $f$. \\
+\\ Once we establish this data flow, we must account for \textbf{Control Flow}. If a statement $d$ is inside a loop or an \texttt{if} block, the condition of that block controls whether $d$ executes. If $d$ is in the slice, the block controlling it must also be added to the slice.\\ 
+
+\hrule
+
+\section{Program Dependence Graphs (PDG) (4 Minutes)}
+
+The data flow approach works, but it's iterative and can be slow. A more structural approach uses the \textbf{Program Dependence Graph (PDG)}. \\
+\\ The PDG is a graph where edges represent dependencies, not just control flow order.
+Slicing in a PDG is simple: It is just \textbf{Backwards Reachability}. If you want the slice for node $n$, you just find all nodes that can reach $n$ in the PDG. \\
+\\ There are two types of edges in a PDG:
+
+\subsection*{1. Flow Dependence}
+\textit{Write on Whiteboard}
+$$ u \to_{f} v $$
+This exists if $u$ defines a variable $x$, $v$ reads $x$, and there is a path from $u$ to $v$ where $x$ is not re-defined.
+
+\subsection*{2. Control Dependence}
+\textit{Write on Whiteboard}
+$$ u \to_{c} v $$
+This captures the logic of "Node $u$ decides whether node $v$ executes."
+Formally, we use the concept of \textbf{Postdominance}.
+A node $v$ \textit{postdominates} $u$ if every path from $u$ to the \texttt{END} goes through $v$. \\
+\\We say $v$ is control dependent on $u$ ($u \to_{c} v$) if:
+\begin{enumerate}
+    \item $v$ postdominates one branch of $u$ (e.g., the True branch).
+    \item $v$ does \textbf{not} postdominate $u$ itself.
+\end{enumerate}
+\textbf{Handling Jumps:}
+Unstructured code (like \texttt{break}, \texttt{continue}) is tricky. We handle this by modeling jumps as "Pseudo control nodes" with pseudo-edges in the PDG to ensure the slice includes the jump if it affects the execution flow of relevant statements. \\
+\hrule
+
+\section{Interprocedural Slicing (3 Minutes)}
+
+Finally, real programs have functions. This brings us to \textbf{Interprocedural Slicing}.
+We assume a "Call by Value-Result" model (inputs copied in, outputs copied back). \\
+\\ We extend the PDG to a \textbf{System Dependence Graph (SDG)}.
+For every procedure call, we add:
+\begin{itemize}
+    \item \textbf{Call nodes} connecting to the procedure entry.
+    \item \textbf{Actual-in/out} nodes connecting to \textbf{Formal-in/out} nodes.
+\end{itemize}
+\textbf{The Challenge:}
+If we just do standard graph reachability on the SDG, we get imprecise results.
+\textit{Example:} If \texttt{Main} calls \texttt{Add}, and \texttt{Foo} calls \texttt{Add}, a standard graph traversal might enter \texttt{Add} from \texttt{Main} but exit back to \texttt{Foo}. This path is invalid—a function must return to the site that called it. \\
+\\ \textbf{The Solution (Two-Phase Slicing):}
+We compute \textbf{Summary Edges}. A summary edge connects an input parameter directly to an output parameter if there is a path through the function. \\
+\\ The slicing algorithm then runs in two phases:
+\begin{enumerate}
+    \item \textbf{Phase 1:} Traverse backwards following flow, control, and call edges (but NOT return edges). This finds everything that happens \textit{before} or \textit{inside} the current call stack.
+    \item \textbf{Phase 2:} From the nodes found in Phase 1, traverse backwards following flow, control, and return edges (but NOT call edges). This finds everything in the procedures that called us.
+\end{enumerate}
+
+\hrule
+
+\section{Conclusion ( $<1$ Minute)}
+
+To summarize:
+\begin{enumerate}
+    \item \textbf{Slicing} isolates the code relevant to a specific computation ($C=(n,V)$).
+    \item We can compute it using \textbf{Data Flow Equations} (finding fixpoints of $\mathcal{R}_C$ and $\mathcal{S}_C$).
+    \item \textbf{PDGs} allow us to solve the problem using graph reachability via Flow and Control dependencies.
+    \item \textbf{Interprocedural Slicing} requires SDGs and a two-phase algorithm to respect the calling context.
+\end{enumerate}
+Thank you. I am happy to take any questions.
+
+\end{document}

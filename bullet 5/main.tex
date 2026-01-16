@@ -1,0 +1,105 @@
+\documentclass[a4paper,12pt]{article}
+\usepackage[utf8]{inputenc}
+\usepackage{geometry}
+\usepackage{amsmath}
+\usepackage{amssymb}
+\usepackage{stmaryrd} % For semantic brackets
+
+% Geometry settings for A4
+\geometry{top=2.5cm, bottom=2.5cm, left=2.5cm, right=2.5cm}
+
+\title{\textbf{Control Flow Analysis}}
+\author{}
+\date{}
+
+\begin{document}
+
+\maketitle
+
+\section*{Introduction (approx. 2 minutes)}
+
+Good morning. Today I will be presenting Chapter 10 on Control Flow Analysis.
+So far in our course, constructing a Control Flow Graph (CFG) has been straightforward because, in simple languages, we can see exactly which function is called just by looking at the AST. \\
+\\ However, complications arise when we introduce \textbf{functions as values}—also known as higher-order functions. If a function can be passed as an argument or returned as a result, we cannot trivially determine which code is executed at a call site. \\
+\\ \textbf{Write on the table:}
+$$ \text{let } f = \dots \text{ in } f(x) $$ \\
+In this example, to know what $f(x)$ calls, we need to know the value of $f$. This creates a dependency: we need dataflow information to build the CFG, but we usually need the CFG to compute dataflow.
+The goal of Control Flow Analysis is to resolve this by approximating the call graph. We aim for a \textbf{conservative over-approximation}, meaning our graph may have too many edges, but never too few.
+
+\section*{CFA for the $\lambda$-Calculus (approx. 4 minutes)}
+
+Let us start with the purest form of this problem: the $\lambda$-calculus.
+The syntax consists of abstractions ($\lambda Id.Exp$), applications ($Exp_1 Exp_2$), and identifiers.
+To analyze the control flow, we need to determine which \textbf{closures} an expression may evaluate to. \\
+\\ \textbf{Write on the table:}
+$$ [\![ v ]\!] \subseteq \text{Closures} $$
+$$ \text{Constraint 1: } \lambda X \in [\![ \lambda X.E ]\!] $$ \\
+For every AST node $v$, we introduce a constraint variable $[\![ v ]\!]$.
+The first constraint is simple: An abstraction $\lambda X.E$ evaluates to itself. Therefore, the token representing this abstraction is always in the set $[\![ \lambda X.E ]\!]$. \\ 
+\\ The second constraint handles function application $E_1 E_2$. \\
+\textbf{Write on the table:}
+$$ \text{Constraint 2 (Application):} $$
+$$ \lambda X \in [\![ E_1 ]\!] \Rightarrow ( [\![ E_2 ]\!] \subseteq [\![ X ]\!] \wedge [\![ E ]\!] \subseteq [\![ E_1 E_2 ]\!] ) $$
+This is a conditional constraint. It states: If the operator $E_1$ evaluates to the closure $\lambda X.E$, then two things must hold:
+\begin{enumerate}
+    \item The argument $E_2$ must flow into the formal parameter $X$ (represented by subset inclusion).
+    \item The result of the function body $E$ must flow into the result of the application $E_1 E_2$.
+\end{enumerate}
+
+\section*{CFA for TIP (approx. 3 minutes)}
+
+Now, let's move to the TIP language. Here we have assignments and computed function calls.
+Our lattice is the powerset of all function names in the program. \\
+\\ We generate three main types of constraints. \\
+\\ \textbf{Write on the table:}
+$$ 1.\ f \in [\![ f ]\!] $$
+$$ 2.\ [\![ E ]\!] \subseteq [\![ X ]\!] \quad (\text{for } X = E) $$ \\
+First, for every function definition named $f$, we have the constraint $f \in [\![ f ]\!]$.
+Second, for assignments $X=E$, the values of $E$ flow into $X$. \\
+\\ Finally, for computed calls $E(E_1, \dots, E_n)$. \\
+\\ \textbf{Write on the table:}
+$$ 3.\ f \in [\![ E ]\!] \Rightarrow ( [\![ E_1 ]\!] \subseteq [\![ a_f^1 ]\!] \wedge \dots \wedge [\![ E'_f ]\!] \subseteq [\![ E(E_1 \dots) ]\!] ) $$
+This mirrors the $\lambda$-calculus rule. If $E$ evaluates to function $f$, then the arguments flow to $f$'s parameters, and $f$'s return expression flows to the call site.
+Note that for direct calls like $f(\dots)$, we can simplify this to an unconditional constraint since we know exactly which function is called.
+
+\section*{The Cubic Algorithm (approx. 4 minutes)}
+
+We have defined the constraints, but how do we solve them? These constraints are instances of a general problem that can be solved in cubic time, $\mathcal{O}(n^3)$. \\ 
+\\ We use a graph where nodes correspond to constraint variables. \\
+\\ \textbf{Write on the table:}
+$$ \text{Graph State:} $$
+$$ x.sol \subseteq T \quad (\text{Solution set}) $$
+$$ x.succ \subseteq V \quad (\text{Successor edges}) $$
+$$ x.cond(t) \subseteq V \times V \quad (\text{Waiting constraints}) $$
+The solver maintains three data structures for each variable $x$:
+\begin{enumerate}
+    \item $x.sol$: The set of tokens found so far.
+    \item $x.succ$: The edges representing subset inclusion $x \subseteq y$.
+    \item $x.cond(t)$: A list of conditional constraints waiting for token $t$.
+\end{enumerate}
+The algorithm processes constraints as follows:
+If we see a subset constraint $x \subseteq y$, we add an edge.
+If we see a conditional constraint $t \in x \Rightarrow y \subseteq z$, we check if $t$ is in $x.sol$. \\
+\\ \textbf{Write on the table:}
+$$ \text{Algorithm Logic:} $$
+$$ \text{If } t \in x.sol \to \text{AddEdge}(y, z) $$
+$$ \text{Else } \to \text{Add to } x.cond(t) $$
+If the token is already present, we trigger the constraint immediately. If not, we save it in $x.cond(t)$.
+Whenever a new token is added to a node, we "propagate" it to all successors and check any satisfied conditional constraints. \\
+\\ The complexity is dominated by the edges. In the worst case, we check $\mathcal{O}(n^2)$ edges, and propagate $\mathcal{O}(n)$ tokens, leading to $\mathcal{O}(n^3)$.
+
+\section*{Object-Oriented Languages (approx. 2 minutes)}
+
+Finally, we briefly touch upon Object-Oriented languages. The challenge there is dynamic dispatch: $x.m(a)$.
+While we could use the full cubic analysis, the class hierarchy allows for faster approximations. \\
+\\ \textbf{Write on the table:}
+$$ \text{1. CHA (Class Hierarchy Analysis)} $$
+$$ \text{2. RTA (Rapid Type Analysis)} $$
+CHA assumes that any method $m$ in the subclasses of the declared type of $x$ can be called.
+RTA refines this by only considering classes that are actually instantiated in the program.
+
+\section*{Conclusion}
+
+In summary, Control Flow Analysis enables us to construct call graphs for languages with first-class functions by solving a set of inclusion constraints. This call graph is the necessary foundation for subsequent interprocedural dataflow analyses.
+
+\end{document}
