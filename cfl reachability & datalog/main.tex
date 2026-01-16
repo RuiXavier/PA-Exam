@@ -1,0 +1,215 @@
+\documentclass[11pt, a4paper]{article}
+\usepackage[utf8]{inputenc}
+\usepackage[margin=1in]{geometry}
+\usepackage{enumitem}
+\usepackage{tcolorbox}
+\usepackage{xcolor}
+\usepackage{amsmath}
+
+% Custom commands for the script
+\newcommand{\speaker}[1]{\vspace{0.8em}\noindent\textbf{\textsc{#1:}}}
+\newcommand{\action}[1]{\vspace{0.4em}\noindent\textit{\textcolor{blue}{[Action: #1]}}}
+\newcommand{\note}[1]{\noindent\textit{\textcolor{gray}{\small (Note: #1)}}}
+
+\title{\textbf{Expanded Oral Exam Script: CFL Reachability \& Datalog}}
+\author{Candidate}
+\date{}
+
+\begin{document}
+
+\maketitle
+
+\section*{I. Introduction (Approx. 2 Minutes)}
+
+\speaker{Speaker}
+Good morning/afternoon. Today I will be presenting two fundamental frameworks used in static program analysis: \textbf{Context-Free Language (CFL) Reachability} and \textbf{Datalog}.
+
+To give you some context, static analysis is all about reasoning about program behavior without actually running the code. We often model programs as graphs—where nodes are program points and edges represent control flow or data flow.
+
+My agenda for this presentation is three-fold:
+\begin{enumerate}
+    \item First, I will explain \textbf{CFL Reachability}. I will discuss why standard graph reachability isn't enough for precise analysis and how we use formal grammars to filter out invalid execution paths.
+    \item Second, I will introduce \textbf{Datalog}. This is a declarative logic language that allows us to specify these reachability problems very concisely, separating the specification of the analysis from its implementation.
+    \item Finally, I will touch upon the complexity of these algorithms and the expressiveness trade-offs we face.
+\end{enumerate}
+
+I will use the whiteboard to illustrate the key algorithms and examples as we go.
+
+\vspace{1em}
+\noindent\hrulefill
+\vspace{1em}
+
+\section*{II. CFL Reachability (Approx. 6-7 Minutes)}
+
+\speaker{Speaker}
+Let's start with the core problem: \textbf{Graph Reachability}.
+In a simple directed graph, we ask: \textit{Is there a path from node $s$ to node $t$?}. Standard algorithms like BFS or DFS can solve this in linear time, $O(n+m)$.
+
+However, in program analysis, a "path" in the graph might not represent a valid execution. We need to filter out paths that are impossible at runtime.
+
+\action{Go to the whiteboard}
+\note{Draw a simple graph with nodes 1, 2, 3, 4. Draw edges representing function calls and returns.}
+
+\speaker{Speaker}
+Consider a function call graph. If function \texttt{main} calls \texttt{foo}, and \texttt{foo} calls \texttt{bar}, when \texttt{bar} returns, it \textbf{must} return to \texttt{foo}. It cannot magically return to a different function. Standard reachability treats all edges equally and misses this constraint.
+
+To fix this, we label the edges of our graph with symbols from an alphabet $\Sigma$. We then say a node $t$ is reachable from $s$ only if the string of labels along the path belongs to a specific Context-Free Language $\mathcal{L}$.
+
+\speaker{Speaker}
+The most important application of this is \textbf{Dyck Reachability}, or matched-parenthesis reachability.
+We define a grammar $G$ that generates balanced parentheses. For example, a function call is an "open parenthesis" $(_i$ and a return is a "close parenthesis" $)_i$.
+
+\action{Draw the Dyck Grammar on the board}
+\note{Reference Slide 11:}
+\[
+\mathcal{S} \rightarrow (_i \mathcal{S} )_i \mid \mathcal{S}\mathcal{S} \mid \epsilon
+\]
+This grammar says a valid path is either a matched pair $(_i \dots )_i$, a concatenation of valid paths $\mathcal{SS}$, or an empty path $\epsilon$.
+
+\action{Draw the Graph Example from Slide 12}
+\note{Draw nodes 1, 2, 3, 4. Edge 1->2 labeled $(_1$. Edge 2->3 labeled $(_2$. Edge 3->4 labeled $)_2$. Edge 4->1 labeled $)_1$.}
+
+\speaker{Speaker}
+Let's trace a path here. If we go from node 1 to 2, we "open" scope 1. From 2 to 3, we "open" scope 2. If we then traverse an edge labeled $)_2$, we "close" scope 2. This matches the inner parenthesis. Finally, if we see $)_1$, we close the outer scope. The path string is $(_1 (_2 )_2 )_1$, which reduces to $\epsilon$. Therefore, node 1 reaches itself via a valid Dyck path.
+
+If we had mismatched edges—say, opening scope 1 but trying to close scope 2—the path would be invalid and rejected by the analysis.
+
+\speaker{Speaker}
+We can apply this same logic to \textbf{Field Sensitivity} in pointer analysis.
+Imagine writing to a field `x.f = y`. This is like "opening" a parenthesis for field `f`. Reading from that field `z = x.f` is like "closing" it. A data flow is valid only if writes and reads to fields match up correctly.
+
+\speaker{Speaker}
+\textbf{Complexity:}
+You might wonder, is this expensive?
+Yes. While standard reachability is linear, CFL reachability generally takes \textbf{$O(n^3)$} time.
+The algorithm is essentially a dynamic programming approach, very similar to the CYK parsing algorithm for strings. We basically add "summary edges" to the graph whenever we find a valid sub-path.
+
+\textbf{The Limit:}
+We run into a hard theoretical limit if we try to be \textit{too} precise. If we want to model \textbf{both} function calls (context sensitivity) AND heap accesses (field sensitivity) perfectly, we get \textbf{Interleaved Dyck Reachability}.
+This involves intersecting two Dyck languages. It is a known result that reachability for the intersection of two context-free languages is \textbf{undecidable}. So, in practice, we must approximate one of the two dimensions.
+
+\vspace{1em}
+\noindent\hrulefill
+\vspace{1em}
+
+\section*{III. Datalog (Approx. 6-7 Minutes)}
+
+\speaker{Speaker}
+Now, let's shift gears to \textbf{Datalog}.
+While CFL reachability is the \textit{concept} or the \textit{algorithm}, Datalog is the \textbf{language} we use to express it.
+Datalog is a declarative logic programming language. In imperative languages like C++ or Python, we describe \textit{how} to compute something. In Datalog, we only describe \textit{what} implies what.
+
+\action{Erase board and write ``Datalog Syntax''}
+
+\speaker{Speaker}
+A Datalog program is built from two things: \textbf{Facts} and \textbf{Rules}.
+\begin{enumerate}
+    \item \textbf{Facts} represent our input data. For a graph, these are just the edges. For example, `edge(1, 2)` is a fact.
+    \item \textbf{Rules} allow us to infer new information. A rule has a \textbf{Head} and a \textbf{Body}, separated by `:-`, which is read as "if".
+\end{enumerate}
+
+\action{Write the Transitive Closure example clearly}
+\note{Reference Slide 12:}
+\begin{verbatim}
+path(X, Y) :- edge(X, Y).
+path(X, Y) :- path(X, Z), edge(Z, Y).
+\end{verbatim}
+
+
+\speaker{Speaker}
+Let's break this down.
+The first rule is the base case: "There is a path from X to Y \textbf{if} there is an edge from X to Y".
+The second rule is the recursive step: "There is a path from X to Y \textbf{if} there is already a path to some node Z, and an edge from Z to Y".
+
+\speaker{Speaker}
+\textbf{Semantics:}
+How does the computer execute this? It uses \textbf{Least Fixed Point semantics}.
+It starts with the facts we know. It applies the rules to discover new facts.
+For example, if we know `edge(1,2)` and `edge(2,3)`, the first rule tells us `path(1,2)` and `path(2,3)` are true.
+Then, the engine runs again. It sees `path(1,2)` and `edge(2,3)`. The second rule triggers, and we infer `path(1,3)`.
+This repeats until no new facts can be generated.
+
+\speaker{Speaker}
+Now, what if we want to say something is reachable only if something else is \textbf{NOT} reachable?
+We need \textbf{Negation}.
+Consider this rule:
+\begin{verbatim}
+oneWay(X,Y) :- path(X,Y), not path(Y,X).
+\end{verbatim}
+This says X is connected to Y, but Y cannot get back to X.
+
+\speaker{Speaker}
+Negation is dangerous. It can lead to paradoxes where there is no clear answer—like "Statement A is true if Statement A is false".
+To handle this, we restrict ourselves to \textbf{Stratified Datalog}.
+This means we organize the predicates into layers or "strata".
+We look at the \textbf{Precedence Graph} of the predicates. If a rule depends negatively on a predicate, that predicate must be in a lower layer.
+We fully compute the lower layer (the facts that are "not" true) \textit{before} we move up to evaluate the rule containing the negation. This ensures the "not" is well-defined and fixed before we use it.
+
+\vspace{1em}
+\noindent\hrulefill
+\vspace{1em}
+
+\section*{IV. Conclusion (Approx. 1-2 Minutes)}
+
+\speaker{Speaker}
+To wrap up, we have looked at two sides of static analysis.
+
+\begin{enumerate}
+    \item \textbf{CFL Reachability} is the theoretical framework that allows us to make our graph traversals precise. It lets us model context-sensitivity (like function calls) and field-sensitivity by treating execution paths as strings in a language. It comes with a cost: $O(n^3)$ complexity compared to linear time for standard reachability.
+    \item \textbf{Datalog} is the practical, declarative tool we use to implement these analyses. It is powerful enough to express any polynomial-time algorithm, including CFL reachability. While Datalog evaluation is generally exponential in the size of the rules, it is polynomial in the size of the data, which makes it efficient for program analysis where the graph is huge but the rules are few.
+\end{enumerate}
+
+This combination—using formal grammars to define validity and Datalog to compute it—is the backbone of many modern static analysis tools.
+
+Thank you for listening. I am ready for your questions.
+
+\newpage
+\section*{EXAM CHEAT SHEET}
+\begin{tcolorbox}[colback=white, colframe=black, title=\textbf{Key Concepts \& Definitions}]
+\textbf{1. CFL Reachability}
+\begin{itemize}
+    \item \textbf{Goal:} Filter invalid paths (e.g., mismatched calls/returns).
+    \item \textbf{Standard Reachability:} $O(n+m)$ (Linear).
+    \item \textbf{CFL Reachability:} $O(n^3)$ (Cubic, like CYK parsing).
+    \item \textbf{Dyck Language:} Balanced parentheses. Call=$($, Return=$)$.
+    \item \textbf{Undecidability:} Intersecting two Dyck languages (Context + Field sensitivity) is undecidable.
+\end{itemize}
+
+\textbf{2. Datalog Syntax}
+\begin{itemize}
+    \item \textbf{Facts:} $edge(1,2)$ (Ground truth).
+    \item \textbf{Rules:} $Head :- Body$ (Inference).
+    \item \textbf{Atom:} $p(t_1, \dots, t_k)$.
+    \item \textbf{Ground Atom:} No variables (constants only).
+\end{itemize}
+
+\textbf{3. Datalog Semantics}
+\begin{itemize}
+    \item \textbf{Herbrand Base:} All possible ground atoms.
+    \item \textbf{Least Fixed Point:} Repeatedly apply rules until nothing changes.
+    \item \textbf{Negation:} Requires \textit{Stratified Datalog} to avoid paradoxes (no negation cycles).
+\end{itemize}
+
+\textbf{4. Complexity}
+\begin{itemize}
+    \item \textbf{Data Complexity:} Polynomial in size of facts (Efficient).
+    \item \textbf{Program Complexity:} Exponential in number of rules.
+    \item \textbf{Expressiveness:} Capture all PTime algorithms.
+\end{itemize}
+\end{tcolorbox}
+
+\begin{tcolorbox}[colback=gray!10, colframe=black, title=\textbf{Drawings to Remember}]
+\textbf{Dyck Graph (Context Sensitivity):}
+\begin{itemize}
+    \item $1 \xrightarrow{(_1} 2 \xrightarrow{(_2} 3 \xrightarrow{)_2} 4 \xrightarrow{)_1} 1$
+    \item Path string: $(_1 (_2 )_2 )_1 \rightarrow \epsilon$ (Valid).
+\end{itemize}
+
+\textbf{Transitive Closure (Datalog):}
+\begin{itemize}
+    \item $path(X,Y) :- edge(X,Y).$
+    \item $path(X,Y) :- path(X,Z), edge(Z,Y).$.
+\end{itemize}
+\end{tcolorbox}
+
+\end{document}
