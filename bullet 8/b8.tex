@@ -67,82 +67,125 @@ My goal is to show how we define the "Ground Truth" (Collecting Semantics) and s
 \end{whiteboard}
 
 % ----------------------------------------------------------------------
-% PART 1
+% PART 1: THE FRAMEWORK & GALOIS CONNECTIONS
 % ----------------------------------------------------------------------
 \section*{Part 1: The Framework \& Galois Connections (4 Minutes)}
 
 \script{
-To perform this analysis formally, we need two domains and a way to translate between them.
+To perform this analysis formally, we need two domains and a strict way to translate between them.
+First, we have the \textbf{Collecting Semantics}. This represents the ground truth—the set of all concrete states reachable at a program point.
+Since this set is often infinite, we map it to a finite \textbf{Abstract Domain} ($L$).
 
-First, we have the \textbf{Collecting Semantics}. This represents the ground truth. It is the set of all concrete states reachable at a specific program point. As we established, this set is often infinite.
-
-Therefore, we map it to an \textbf{Abstract Domain} ($L$). To link them, we define a pair of functions:
-1. \textbf{Abstraction ($\alpha$):} Maps a set of concrete values to the "best" abstract representation.
-2. \textbf{Concretization ($\gamma$):} Maps an abstract value back to the set of concrete meanings it represents.
-
-Together, these form a \textbf{Galois Connection}. This connection relies on two properties to ensure we don't lose safety or precision.
+To link them, we define a \textbf{Galois Connection}, which consists of two monotone functions:
+1. \textbf{Abstraction ($\alpha$):} Maps a concrete set to its "best" abstract representation.
+2. \textbf{Concretization ($\gamma$):} Maps an abstract value back to the set of real values it represents.
 }
 
 \begin{whiteboard}
-\textbf{Draw the Lattice (Sign Analysis):}
-\[
-\begin{array}{c}
-\top \\
-\nearrow \quad \mid \quad \nwarrow \\
-- \quad 0 \quad + \\
-\nwarrow \quad \mid \quad \nearrow \\
-\perp
-\end{array}
-\]
-
-\textbf{Write the Galois Properties:}
+\textbf{The Galois Connection Pair $(\alpha, \gamma)$:}
 \begin{enumerate}
-    \item $c \subseteq \gamma(\alpha(c))$ \quad \textbf{(Extensive / Safe)}
-    \item $\alpha(\gamma(a)) \sqsubseteq a$ \quad \textbf{(Reductive / Precise)}
+    \item \textbf{Extension (Safety):} 
+    \[ x \subseteq \gamma(\alpha(x)) \]
+    \item \textbf{Reduction (Precision):} 
+    \[ \alpha(\gamma(y)) \sqsubseteq y \]
+\end{enumerate}
+\textbf{The Adjunction (Shortcut):}
+\[ \alpha(x) \sqsubseteq y \iff x \subseteq \gamma(y) \]
+\end{whiteboard}
+
+\script{
+For this pair to be a valid Galois Connection, it must satisfy two specific properties.
+
+The first is \textbf{Extension}. This is our \textbf{Safety} guarantee.
+It says: If you abstract a value and then concretize it back, the result must be \textit{larger or equal} to what you started with.
+We are allowed to add "noise" (imprecision), but we are strictly forbidden from losing original data.
+
+The second is \textbf{Reduction}. This is our \textbf{Precision} guarantee.
+It says: If you concretize an abstract value and re-abstract it, you must get a result \textit{smaller or equal} to the original.
+This forces $\alpha$ to pick the most specific symbol available. It prevents the abstraction from being "lazy" and just returning $\top$ (Unknown) for everything.
+
+Finally, we often combine these into the \textbf{Adjunction Property}.
+This is a powerful shortcut: It tells us that checking if a concrete set $x$ is safely represented by abstract value $y$ is mathematically identical to checking if $x$ is contained in the concretization of $y$.
+}
+
+% ----------------------------------------------------------------------
+% PART 2: OPTIMALITY & COMPLETENESS
+% ----------------------------------------------------------------------
+\section*{Part 2: Precision - Optimality \& Completeness (Approx. 5 Minutes)}
+
+\script{
+Now that we have Soundness (safety), we must ask: Is our analysis *good*? 
+We define "good" using two concepts: \textbf{Optimality} and \textbf{Completeness}.
+
+First, \textbf{Optimality}. This concept applies to our transfer functions (the rules we write for operations like $+$ or $-$). 
+Optimality basically asks: \textit{Is this rule as precise as it mathematically can be, given our abstract domain?}
+
+The mathematical definition provides a recipe for deriving the perfect rule:
+}
+
+\begin{whiteboard}
+\textbf{Optimality (The "Best" Local Rule):}
+\[ af_{opt} = \alpha \circ cf \circ \gamma \]
+\textbf{Recipe:}
+\begin{enumerate}
+    \item \textbf{Concretize ($\gamma$):} Go to the real world.
+    \item \textbf{Compute ($cf$):} Do the math concretely.
+    \item \textbf{Abstract ($\alpha$):} Come back to the abstract world.
 \end{enumerate}
 \end{whiteboard}
 
 \script{
-Property \#1 is the most critical. It essentially says: If we abstract a value and then concretize it back, the resulting set must be \textit{larger or equal} to the original. We might add noise (imprecision), but we never lose data (safety).
+If we follow this loop, we get the optimal result. 
+For example, consider the expression $x - x$ where the value of $x$ is unknown ($\top$).
 
-Property \#2 is the **Reductive** property. It ensures our abstraction doesn't drift into useless vagueness.
-It says: If I take an abstract state (like "Positive"), turn it into numbers, and then re-abstract it, I should get "Positive" back—not "Unknown" ($\top$).
-If the result were larger than $a$, it would mean our abstraction function generated noise out of thin air. This property guarantees the abstraction is as precise as possible for the chosen domain.
+In a naive analysis, we might say: "I don't know $x$, so I don't know $x - x$." The result would be $\top$.
+But let's apply the optimality recipe:
+\begin{enumerate}
+    \item We concretize $\top$ to "all integers".
+    \item We compute $n - n$ for every integer. The result is always $0$.
+    \item We abstract $\{0\}$ to the abstract value \textbf{Zero}.
+\end{enumerate}
+So, the \textit{optimal} abstract result for $x - x$ is \textbf{Zero}, not $\top$. Optimality ensures we don't lose precision just because our transfer function is lazy.
 }
 
-% ----------------------------------------------------------------------
-% PART 2
-% ----------------------------------------------------------------------
-\section*{Part 2: Soundness Constraints (4 Minutes)}
-
 \script{
-Now that we have the domains, how do we define the analysis itself? We use the \textbf{Soundness Condition}.
-
-We do not check the whole program at once. Instead, we verify it instruction by instruction. We compare the Concrete Step ($cf$) against the Abstract Step ($af$).
-
-Visually, this forms a commutative diagram.
+Next is \textbf{Completeness}. This is a much stricter, global requirement. 
+Completeness implies there is \textbf{zero} loss of precision during the entire analysis compared to the concrete execution.
 }
 
 \begin{whiteboard}
-\textbf{Draw the Soundness Square:}
+\textbf{Completeness (Perfect Simulation):}
+\[ \alpha \circ cf = af \circ \alpha \]
+\textbf{Commutative Diagram:}
 \[
 \begin{array}{ccc}
-     C & \xrightarrow{\quad cf \quad} & C \\
-     \alpha \Bigg\downarrow & & \Bigg\downarrow \alpha \\
-     A & \xrightarrow{\quad af \quad} & A
+    Concrete & \xrightarrow{cf} & Concrete \\
+    \downarrow \alpha & & \downarrow \alpha \\
+    Abstract & \xrightarrow{af} & Abstract
 \end{array}
 \]
-
-\textbf{Write the Soundness Inequality:}
-\[ \alpha(cf(c)) \sqsubseteq af(\alpha(c)) \]
 \end{whiteboard}
 
 \script{
-Let's trace this inequality:
-1. On the Left Side ($\alpha(cf(c))$): We run the code concretely, then abstract the result. This is the "Truth".
-2. On the Right Side ($af(\alpha(c))$): We abstract the input first, then run the analysis function.
+This formula represents a "Commutative Diagram." 
+It says: It shouldn't matter if I calculate concretely and then abstract ($\alpha \circ cf$), or abstract first and then calculate abstractly ($af \circ \alpha$). The result should be identical.
 
-The inequality ($\sqsubseteq$) guarantees that our analysis covers \textit{at least} everything that actually happens in the concrete execution. By Tarski's Fixed Point Theorem, if this holds for every step (local soundness), the entire analysis is sound.
+In Abstract Interpretation, completeness is extremely rare. We almost always lose information.
+Consider adding $(+1)$ and $(-1)$.
+}
+
+\begin{whiteboard}
+\textbf{Example of Incompleteness:}
+\begin{itemize}
+    \item \textbf{Concrete Path:} $1 + (-1) = 0$. Abstraction $\to$ \textbf{Zero}.
+    \item \textbf{Abstract Path:} $(+) + (-) = \top$ (could be anything).
+\end{itemize}
+Since $\textbf{Zero} \sqsubset \top$, the Abstract path lost precision.
+\end{whiteboard}
+
+\script{
+Because the abstract calculation gave us $\top$ while the concrete calculation (abstracted) gave us \textbf{Zero}, our analysis is \textbf{Incomplete}. 
+We lost the specific relationship that the magnitudes were equal.
 }
 
 % ----------------------------------------------------------------------
@@ -183,7 +226,7 @@ Because $\alpha(0) \sqsubset \top$, the analysis is Incomplete.
 % ----------------------------------------------------------------------
 % CONCLUSION
 % ----------------------------------------------------------------------
-\section*{Conclusion (< 1 Minute)}
+\section*{Conclusion (\textless 1 Minute)}
 
 \script{
 To summarize:
