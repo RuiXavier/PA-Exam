@@ -1,0 +1,81 @@
+\documentclass[11pt, a4paper]{article}
+\usepackage[utf8]{inputenc}
+\usepackage{geometry}
+\usepackage{titlesec}
+\usepackage{enumitem}
+\usepackage{xcolor}
+
+\geometry{left=2.5cm, right=2.5cm, top=2.5cm, bottom=2.5cm}
+
+\title{\textbf{Oral Exam: Scalable and Precise Taint Analysis for Android}}
+\author{Group 1 Presentation Script}
+\date{}
+
+\begin{document}
+
+\maketitle
+
+\section*{0:00--0:45 | The Problem}
+\begin{itemize}
+    \item \textbf{Context:} Android apps frequently leak sensitive data (like location or phone state) to untrusted sinks (logs or the network).
+    \item \textbf{The Gap:} Existing solutions generally fall into two traps:
+    \begin{itemize}
+        \item \textit{Dynamic Analysis (e.g., TaintDroid):} Often slows down execution and suffers from low code coverage.
+        \item \textit{Static Analysis (e.g., FlowDroid):} While precise, it is often computationally expensive and memory-intensive. Surprisingly, FlowDroid reported finding no network leaks in Play Store apps.
+    \end{itemize}
+    \item \textbf{Goal:} To propose a modular, type-based analysis that is both scalable (running in minutes) and precise enough to detect real-world privacy leaks.
+\end{itemize}
+
+\section*{0:45--2:45 | The Solution: DFlow \& DroidInfer}
+The authors introduce \textbf{DFlow} (the type system) and \textbf{DroidInfer} (the inference tool).
+\begin{enumerate}
+    \item \textbf{Type System (DFlow):} 
+    Instead of complex points-to analysis, variables are assigned type qualifiers:
+    \begin{itemize}
+        \item \texttt{tainted}: Holds sensitive data.
+        \item \texttt{safe}: Can flow to untrusted sinks.
+        \item \texttt{poly}: A context-sensitive polymorphic qualifier adapting to the call site "viewpoint".
+    \end{itemize}
+    \item \textbf{Subtyping Logic:}
+    The system enforces the hierarchy: $\texttt{safe} <: \texttt{poly} <: \texttt{tainted}$.
+    \begin{itemize}
+        \item You can assign \texttt{safe} data to a \texttt{tainted} variable, but assigning \texttt{tainted} data to a \texttt{safe} sink causes a \textbf{Type Error}.
+    \end{itemize}
+    \item \textbf{Android Specifics:}
+    \begin{itemize}
+        \item \textbf{Callbacks:} It handles the "open" nature of Android apps (multiple entry points) by connecting the `this` parameters of callback methods within the same lifecycle.
+        \item \textbf{Libraries:} It uses conservative defaults for unannotated libraries to maintain soundness without needing full analysis of the Android framework.
+    \end{itemize}
+    \item \textbf{Reporting (CFL-Reachability):}
+    Raw type errors are hard to read. They use \textbf{CFL-Explain} to map errors into human-readable paths (Source $\rightarrow$ Sink) using Context-Free Language reachability on the dependency graph.
+\end{enumerate}
+
+\section*{2:45--4:00 | Empirical Results}
+They evaluated DroidInfer on three datasets:
+\begin{itemize}
+    \item \textbf{DroidBench:} Achieved an F-measure of 0.88, which is comparable to the state-of-the-art FlowDroid (0.89).
+    \item \textbf{Contagio (Malware):} Correctly identified all network leaks in the "infostealer" malware set, with zero false positives for explained errors.
+    \item \textbf{Google Play Store:}
+    \begin{itemize}
+        \item \textbf{Scalability:} Analyzed top apps in roughly 2 minutes on average with a 2GB memory footprint.
+        \item \textbf{Findings:} Detected 113 confirmed network flows across 40 apps—leaks that FlowDroid notably missed.
+        \item \textbf{False Positives:} A rate of 15.7\%, largely due to conservative assumptions about library calls.
+    \end{itemize}
+\end{itemize}
+
+\section*{4:00--5:00 | Critique \& Conclusion}
+\begin{itemize}
+    \item \textbf{Strengths:}
+    \begin{itemize}
+        \item \textbf{Scalability:} Runs efficiently on standard hardware where other tools crash or time out.
+        \item \textbf{Usability:} CFL-Explain bridges the gap between abstract type errors and actionable bug reports.
+    \end{itemize}
+    \item \textbf{Weaknesses:}
+    \begin{itemize}
+        \item \textbf{Soundness Risks:} CFL-Explain restores field sensitivity heuristically, which improves precision but may technically introduce unsoundness (missing some obscure flows).
+        \item \textbf{Library Annotations:} The tool relies on the correctness of manual annotations for the Android library; incorrect defaults could lead to missed leaks.
+    \end{itemize}
+    \item \textbf{Conclusion:} DroidInfer represents a viable path toward utilizing static taint analysis in commercial app stores due to its unique balance of speed and precision.
+\end{itemize}
+
+\end{document}

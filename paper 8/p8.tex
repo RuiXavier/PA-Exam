@@ -1,0 +1,61 @@
+\documentclass[11pt, a4paper]{article}
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage{geometry}
+\usepackage{enumitem}
+
+\geometry{left=2.5cm, right=2.5cm, top=2.5cm, bottom=2.5cm}
+
+\title{\textbf{Oral Exam Script: Boomerang}\\ \large Based on Späth et al. (ECOOP 2016)}
+\author{}
+\date{}
+
+\begin{document}
+
+\maketitle
+
+\section*{Minute 1: The Problem (Context)}
+\begin{itemize}
+    \item \textbf{Context:} Static analyses (like Taint Analysis or security scanners) heavily rely on Pointer Analysis.
+    \item \textbf{The Gap:} Existing pointer analyses are usually "Whole Program" (compute everything for everyone), which is very slow.
+    \item \textbf{The Need:} Client analyses (like FlowDroid) often have specific questions: "What are all the aliases of variable $x$ at line $L$?" or "Where was this object allocated?"
+    \item \textbf{Goal:} Create a \textbf{Demand-Driven} analysis that is highly precise (Context/Flow/Field sensitive) but only computes what is asked for.
+\end{itemize}
+
+\section*{Minute 2-3: The Solution (Technical Insight)}
+\begin{itemize}
+    \item \textbf{Bi-Directional Analysis:} Boomerang answers queries in two phases:
+    \begin{enumerate}
+        \item \textbf{Backward Pass:} Traces the variable \textit{up} the control flow to find its \textbf{Allocation Site} (where it was created).
+        \item \textbf{Forward Pass:} Starts from the allocation site and traces \textit{down} to find all other variables pointing to that object (\textbf{Aliases}).
+    \end{enumerate}
+    \item \textbf{IFDS Framework:} It utilizes the IFDS graph-reachability algorithm (Interprocedural Finite Distributive Subset) but modifies it.
+    \item \textbf{Handling Pointers (The Hard Part):} Pointer analysis is "Non-Distributive" (a fancy way of saying `x.f = y` is hard to model in IFDS).
+    \item \textbf{POIs (Points of Indirection):} When the solver hits a field read/write, it pauses and triggers a recursive sub-query to find where the base object points. This is handled by a special outer loop.
+\end{itemize}
+
+\section*{Minute 4: Evaluation}
+\begin{itemize}
+    \item \textbf{Benchmarks:} They created \textbf{PointerBench} to test complex aliasing scenarios.
+    \item \textbf{Results:}
+    \begin{itemize}
+        \item \textbf{Precision:} Boomerang achieved nearly 100\% precision and recall on the benchmark, beating other demand-driven tools.
+        \item \textbf{Integration:} When plugged into FlowDroid (a taint analysis tool), it reduced the pointer query count by \textbf{29x}. Why? Because Boomerang returns \textit{all} aliases in one go, whereas previous tools had to be asked repeatedly for every single variable.
+    \end{itemize}
+\end{itemize}
+
+\section*{Minute 5: Critique \& Discussion}
+\begin{itemize}
+    \item \textbf{Strengths:}
+    \begin{itemize}
+        \item \textbf{Unified Query:} It provides both Points-To (allocation) and Alias info in one efficient process.
+        \item \textbf{Precision:} It offers full context-sensitivity on demand, which is usually too expensive for whole-program tools.
+    \end{itemize}
+    \item \textbf{Weaknesses:}
+    \begin{itemize}
+        \item \textbf{Worst-Case Behavior:} If a client asks for "everything," Boomerang becomes slower than a standard whole-program analysis because of the overhead of managing sub-queries.
+        \item \textbf{Complexity:} The mechanism of pausing the solver and firing recursive queries (handling POIs) makes the implementation significantly more complex than standard graph algorithms.
+    \end{itemize}
+\end{itemize}
+
+\end{document}

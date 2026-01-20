@@ -1,0 +1,72 @@
+\documentclass[11pt, a4paper]{article}
+\usepackage{geometry}
+\geometry{margin=1in}
+\usepackage{titlesec}
+\usepackage{enumitem}
+\usepackage{xcolor}
+\usepackage{hyperref}
+
+\title{\textbf{Oral Exam Notes: Learning-Based Static Program Slicing}}
+\author{Group 6: NS-Slicer}
+\date{Time Limit: 5 Minutes}
+
+\begin{document}
+
+\maketitle
+
+\section*{1. The Problem (0:00 - 1:00)}
+\begin{itemize}
+    \item \textbf{Context:} Developers constantly copy code from StackOverflow. A study found 99 vulnerable snippets propagated to 2,589 GitHub repositories.
+    \item \textbf{The Challenge:} We need to analyze these snippets for vulnerabilities.
+    \item \textbf{Failure of Traditional Tools:} Traditional Static Analysis (like \textit{JavaSlicer} or \textit{Joern}) requires \textbf{complete, compilable code} to build a System Dependence Graph (SDG).
+    \item \textbf{Gap:} StackOverflow snippets are incomplete (missing variable declarations, missing imports). Traditional tools crash or produce empty results on them.
+\end{itemize}
+
+\section*{2. The Solution: NS-Slicer (1:00 - 2:00)}
+\begin{itemize}
+    \item \textbf{Proposal:} A Deep Learning approach called \textbf{NS-Slicer}.
+    \item \textbf{Core Idea:} Instead of logically building a dependency graph, treat Program Slicing as a \textbf{classification task}.
+    \item \textbf{Hypothesis:} Pre-Trained Language Models (PLMs) like CodeBERT have implicitly learned "Variable-Statement Dependencies" during their pre-training.
+    \item \textbf{Goal:} Predict backward and forward slices for \textit{incomplete} code without needing compilation.
+\end{itemize}
+
+
+\section*{3. Methodology (2:00 - 3:00)}
+\begin{itemize}
+    \item \textbf{Model Backbone:} They utilize \textbf{GraphCodeBERT} because it understands data flow better than standard BERT.
+    \item \textbf{Input:} The source code (tokens) + a Slicing Criterion (a specific variable at a specific line).
+    \item \textbf{Architecture:}
+    \begin{enumerate}
+        \item \textbf{Encoders:} Convert code tokens into embeddings.
+        \item \textbf{Pooling:} Aggregates token embeddings into "Variable Embeddings" and "Statement Embeddings".
+        \item \textbf{Decoders:} Two separate Multi-Layer Perceptrons (MLP). One predicts the \textbf{Backward Slice} (what affects this variable?), one predicts the \textbf{Forward Slice} (what does this variable affect?).
+    \end{enumerate}
+\end{itemize}
+
+\section*{4. Evaluation (3:00 - 4:00)}
+\begin{itemize}
+    \item \textbf{Accuracy on Complete Code:} Achieved an F1-score of \textbf{96.77\%}, matching ground-truth tools almost perfectly.
+    \item \textbf{Accuracy on Partial Code:} They simulated partial code by deleting 5-15\% of lines. The model maintained high accuracy (F1 \textbf{94.66\% - 96.62\%}), proving it is robust to missing context.
+    \item \textbf{Downstream Application (Vulnerability Detection):}
+    \begin{itemize}
+        \item They plugged NS-Slicer into a vulnerability detector called \textit{VulDeePecker}.
+        \item Because NS-Slicer could handle the partial code, it improved Vulnerability Detection F1-scores by \textbf{15.1\%} (up to 73.38\%).
+    \end{itemize}
+\end{itemize}
+
+\section*{5. Critique \& Conclusion (4:00 - 5:00)}
+\begin{itemize}
+    \item \textbf{Strengths:}
+    \begin{itemize}
+        \item \textbf{Robustness:} It works where traditional analysis fails (broken/partial code).
+        \item \textbf{Dual Capability:} Handles both forward and backward slicing effectively.
+    \end{itemize}
+    \item \textbf{Weaknesses (Crucial for exam):}
+    \begin{itemize}
+        \item \textbf{Input Limit:} Restricted by RoBERTa's \textbf{512-token limit}. It cannot slice large files, only snippets.
+        \item \textbf{Black Box:} Unlike traditional slicing, there is no mathematical guarantee of correctness. It is a probabilistic prediction.
+        \item \textbf{Aliasing:} It struggles slightly with complex variable aliasing (two variables pointing to the same memory), seeing a 12\% performance drop.
+    \end{itemize}
+\end{itemize}
+
+\end{document}

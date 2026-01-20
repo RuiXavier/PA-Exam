@@ -1,0 +1,69 @@
+\documentclass[11pt, a4paper]{article}
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage{geometry}
+\usepackage{enumitem}
+
+\geometry{left=2.5cm, right=2.5cm, top=2.5cm, bottom=2.5cm}
+
+\title{\textbf{Oral Exam Script: Type-Based Race Detection for Java}\\ \large Based on Flanagan \& Freund (PLDI 2000)}
+\author{}
+\date{}
+
+\begin{document}
+
+\maketitle
+
+\section*{Minute 1: The Problem (Context)}
+\begin{itemize}
+    \item \textbf{The Core Issue:} Race conditions are common and severe in multithreaded programs, leading to non-deterministic crashes.
+    \item \textbf{Status Quo:} The standard way to avoid them is a locking discipline (acquiring a specific lock before accessing a specific field).
+    \item \textbf{The Gap:} This discipline is just a convention. Java compilers don't check it, and testing is unreliable because it depends on thread scheduling.
+    \item \textbf{Goal:} The paper proposes a \textbf{Static Type System} to enforce this discipline. If the code type-checks, it guarantees the absence of data races.
+\end{itemize}
+
+\section*{Minute 2-3: The Solution (Technical Insight)}
+\begin{itemize}
+    \item \textbf{Type Annotations:} They extend Java's type system using annotations in comments (to maintain backward compatibility):
+    \begin{itemize}
+        \item \texttt{guarded\_by l}: Specifies that a field can only be accessed when lock \texttt{l} is held.
+        \item \texttt{requires l}: Specifies that a method must only be called if the caller holds lock \texttt{l}.
+    \end{itemize}
+    \item \textbf{Parameterized Classes:} A major contribution is handling "Ghost Parameters."
+    \begin{itemize}
+        \item \textit{Example:} A generic `Vector` class doesn't know which lock protects it. The type system allows passing a lock as a type parameter (e.g., `Vector<l>`), allowing the class to refer to a lock that exists outside its own scope.
+    \end{itemize}
+    \item \textbf{Escape Hatches:} To handle code that is safe but too complex for the type checker, they introduced:
+    \begin{itemize}
+        \item \texttt{thread\_local}: Classes that don't need locks because they never escape a single thread.
+        \item \texttt{no\_warn}: To suppress false positives explicitly.
+    \end{itemize}
+\end{itemize}
+
+\section*{Minute 4: Evaluation}
+\begin{itemize}
+    \item \textbf{Tool:} Implemented as `rccjava` (Race Condition Checker).
+    \item \textbf{Scale:} Tested on huge libraries like `java.util` (approx. 40k lines of code).
+    \item \textbf{Findings:}
+    \begin{itemize}
+        \item Found real bugs in production code, including a race in `java.util.Vector` between `removeAllElements` and `lastIndexOf`.
+        \item The overhead was low: only about 20 annotations were needed per 1000 lines of code.
+    \end{itemize}
+\end{itemize}
+
+\section*{Minute 5: Critique \& Discussion}
+\begin{itemize}
+    \item \textbf{Strengths:}
+    \begin{itemize}
+        \item \textbf{Modularity:} Once a class is annotated, it can be checked independently of the rest of the program.
+        \item \textbf{Documentation:} The types serve as machine-checked documentation for the synchronization protocol.
+    \end{itemize}
+    \item \textbf{Weaknesses:}
+    \begin{itemize}
+        \item \textbf{Manual Burden:} It requires significant manual effort to annotate legacy code.
+        \item \textbf{Conservatism:} It flags false positives for benign races (e.g., constructors initializing data before any other thread can see it, though they added some heuristics for this).
+        \item \textbf{Scope:} It only catches data races, not deadlocks or logical concurrency bugs.
+    \end{itemize}
+\end{itemize}
+
+\end{document}

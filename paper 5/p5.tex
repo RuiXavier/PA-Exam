@@ -1,0 +1,67 @@
+\documentclass[11pt, a4paper]{article}
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage{geometry}
+\usepackage{enumitem}
+
+\geometry{left=2.5cm, right=2.5cm, top=2.5cm, bottom=2.5cm}
+
+\title{\textbf{Oral Exam Script: RacerD}\\ \large Based on Blackshear et al. (OOPSLA 2018)}
+\author{}
+\date{}
+
+\begin{document}
+
+\maketitle
+
+\section*{Minute 1: The Problem (Context)}
+\begin{itemize}
+    \item \textbf{Industrial Context:} Facebook (Meta) moved their Android News Feed from sequential to multithreaded for performance.
+    \item \textbf{The Challenge:} They needed to check millions of lines of code.
+    \begin{itemize}
+        \item \textit{Whole-program analysis} was too slow (hours).
+        \item \textit{Annotation-heavy systems} (like `rccjava`) required too much manual work for developers.
+    \end{itemize}
+    \item \textbf{Goal:} A tool that is fast enough to run during Code Review (CI/CD), scalable, and has a high "Fix Rate" (low false positives), even if it is technically unsound.
+\end{itemize}
+
+\section*{Minute 2-3: The Solution (Technical Insight)}
+\begin{itemize}
+    \item \textbf{Compositionality:} This is the key technical innovation. RacerD analyzes each method \textbf{independently} without knowing the whole call graph.
+    \item \textbf{Summaries:} It produces a summary for each method containing "Access Snapshots".
+    \item \textbf{Access Snapshot Components:}
+    \begin{enumerate}
+        \item \textbf{Prefix:} The path to the object being accessed (e.g., `this.field`).
+        \item \textbf{Lock Set:} Which locks are held during access?
+        \item \textbf{Thread Status:} Is this running on the Main Thread or a Background Thread?
+    \end{enumerate}
+    \item \textbf{Syntactic Matching:} Instead of expensive alias analysis, it checks for races on syntactically identical paths. If `A.f` is written without a lock in one thread and read in another, it flags it.
+\end{itemize}
+
+\section*{Minute 4: Evaluation}
+\begin{itemize}
+    \item \textbf{Deployment:} Deployed in production at Facebook.
+    \item \textbf{Results:}
+    \begin{itemize}
+        \item Detected over 2,500 concurrency bugs that were actually fixed by developers.
+        \item \textbf{Performance:} It analyzes code changes ("diffs") in minutes (median 12 mins), allowing it to comment directly on Pull Requests.
+    \end{itemize}
+    \item \textbf{Comparison:} Compared to academic tools like CHORD, RacerD was orders of magnitude faster.
+\end{itemize}
+
+\section*{Minute 5: Critique \& Discussion}
+\begin{itemize}
+    \item \textbf{Strengths:}
+    \begin{itemize}
+        \item \textbf{Scalability:} Compositional analysis allows it to scale to millions of LOC.
+        \item \textbf{Workflow Integration:} By accepting "unsoundness" (missing some bugs), they achieved a tool developers actually use.
+    \end{itemize}
+    \item \textbf{Weaknesses:}
+    \begin{itemize}
+        \item \textbf{Unsoundness:} It explicitly misses races involving complex aliasing (if `x` and `y` point to the same object but have different names, RacerD might miss the race).
+        \item \textbf{Coarse Granularity:} It tracks lock counts rather than specific lock instances in some cases to save memory.
+        \item \textbf{Annotations:} Still requires `@ThreadSafe` or `@MainThread` annotations to define the threading model.
+    \end{itemize}
+\end{itemize}
+
+\end{document}

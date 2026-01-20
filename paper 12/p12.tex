@@ -1,0 +1,74 @@
+\documentclass[11pt, a4paper]{article}
+\usepackage[utf8]{inputenc}
+\usepackage{amsmath}
+\usepackage{geometry}
+\usepackage{titlesec}
+\usepackage{enumitem}
+\usepackage{xcolor}
+
+\geometry{left=2.5cm, right=2.5cm, top=2.5cm, bottom=2.5cm}
+
+\title{\textbf{Oral Exam: Apposcopy (Semantics-Based Malware Detection)}}
+\author{Group 12 Presentation Script}
+\date{}
+
+\begin{document}
+
+\maketitle
+
+\section*{0:00--0:45 | The Problem}
+\begin{itemize}
+    \item \textbf{Context:} Android malware is rapidly evolving, often stealing private user data.
+    \item \textbf{The Gap:} Traditional detection methods have significant flaws:
+    \begin{itemize}
+        \item \textit{Taint Analysis:} Cannot distinguish between malicious theft and legitimate functionality (e.g., an email app *must* send data to the internet).
+        \item \textit{Signature-Based (Syntactic):} Relies on byte-level patterns. It is easily defeated by simple obfuscation techniques like renaming or code reordering.
+    \end{itemize}
+    \item \textbf{Goal:} To detect malware based on \textbf{semantics} (behavior) rather than syntax, effectively identifying malware families even when obfuscated.
+\end{itemize}
+
+\section*{0:45--2:45 | The Solution: Apposcopy}
+The authors propose matching high-level signatures against static analysis results.
+\begin{enumerate}
+    \item \textbf{Core Concept:} Malware is defined by \textit{what it does}. The system analyzes:
+    $$ \text{Malware} = \text{Control Flow (ICC)} + \text{Data Flow (Taint)} $$
+    \item \textbf{Inter-Component Call Graph (ICCG):}
+    They build a graph where nodes are components (Activities, Services, Receivers) and edges represent communication (Intents). This abstracts away local code changes.
+    \item \textbf{Signature Language (Datalog):}
+    Malware families are defined using logical predicates:
+    \begin{itemize}
+        \item \texttt{icc(p, q)}: Component P sends an Intent to Q.
+        \item \texttt{flow(s, source, s, sink)}: Sensitive data flows from a specific source to a sink.
+    \end{itemize}
+    \item \textbf{Example (GoldDream Family):}
+    The signature looks for a specific behavioral pattern: A Receiver listening for SMS events $\rightarrow$ Starts a Service $\rightarrow$ That Service leaks DeviceID to the Internet.
+\end{enumerate}
+
+\section*{2:45--4:00 | Evaluation}
+Tested on the \textbf{Android Malware Genome Project} and Google Play.
+\begin{itemize}
+    \item \textbf{Accuracy:} Achieved 90\% detection accuracy overall.
+        \begin{itemize}
+            \item \textit{Success:} Excellent detection of families like \textit{DroidKungFu} and \textit{GoldDream}.
+            \item \textit{Failure:} Performed poorly on the \textit{BaseBridge} family (38\% accuracy) because it uses \textbf{dynamic code loading}, which static analysis cannot see.
+        \end{itemize}
+    \item \textbf{Resilience:} When testing obfuscated malware (using ProGuard and encryption), Apposcopy maintained high detection rates while commercial AVs (like AVG and Symantec) failed significantly.
+    \item \textbf{Comparison:} Outperformed \textbf{Kirin} (a permission-based tool), which had a 48\% false negative rate compared to Apposcopy's 10\% on the malware set.
+\end{itemize}
+
+\section*{4:00--5:00 | Critique \& Conclusion}
+\begin{itemize}
+    \item \textbf{Strengths:}
+    \begin{itemize}
+        \item \textbf{Semantic Detection:} Combining ICC and Taint analysis drastically lowers false positives compared to using either method alone.
+        \item \textbf{Obfuscation Resilience:} The high-level graph approach makes it robust against standard renaming attacks.
+    \end{itemize}
+    \item \textbf{Weaknesses:}
+    \begin{itemize}
+        \item \textbf{Dynamic Code Loading:} This remains the "Achilles Heel." Apposcopy cannot analyze code that is downloaded at runtime.
+        \item \textbf{Known Families Only:} It is not a zero-day detector. It requires a pre-written Datalog signature for a specific family.
+    \end{itemize}
+    \item \textbf{Verdict:} Apposcopy is highly effective for vetting apps in a store pipeline against known threats, but must be paired with dynamic analysis to catch modern, dynamic-loading malware.
+\end{itemize}
+
+\end{document}

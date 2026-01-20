@@ -1,0 +1,85 @@
+\documentclass[11pt, a4paper]{article}
+\usepackage[utf8]{inputenc}
+\usepackage{geometry}
+\usepackage{enumitem}
+\usepackage{amsmath}
+\usepackage{amssymb}
+\usepackage{titlesec}
+
+% Geometry settings for readable notes
+\geometry{left=2.5cm, right=2.5cm, top=2.5cm, bottom=2.5cm}
+
+% Formatting titles to save space
+\titleformat{\section}{\large\bfseries}{\thesection}{1em}{}
+\titlespacing*{\section}{0pt}{10pt}{5pt}
+
+\title{\textbf{Oral Exam Notes: A Compositional Deadlock Detector for Android Java}\\
+\large Based on Brotherston et al. (ASE 2021)}
+\date{}
+\author{}
+
+\begin{document}
+
+\maketitle
+
+\section*{1. Motivation \& Context (Approx. 1 Minute)}
+\textit{Goal: Establish why this research exists and the specific industrial constraints.}
+
+\begin{itemize}
+    \item \textbf{The Problem:} Concurrency is ubiquitous in Android (UI thread + background threads), making deadlocks a core reliability issue that freezes apps.
+    \item \textbf{The Industrial Setting:} The authors target Facebook's massive Android codebases (tens of millions of LoC) with thousands of daily commits.
+    \item \textbf{The Challenge:} Standard whole-program analysis is too slow for Continuous Integration (CI). They need a tool that runs at \textbf{code-review time} (minutes, not hours) and focuses on \textit{actionable} reports over theoretical perfection.
+    \item \textbf{Research Gap:} Existing tools either require the whole program or prioritize soundness (proving absence of deadlocks) at the cost of high false-positive rates, which developers ignore.
+\end{itemize}
+
+\section*{2. Theoretical Framework: Critical Pairs (Approx. 1.5 Minutes)}
+\textit{Goal: Explain the "Core Contribution" — the mathematical model.}
+
+\begin{itemize}
+    \item \textbf{Abstract Language:} The paper models Android Java as an abstract language with \textit{balanced re-entrant locks} (like \texttt{synchronized} blocks) and non-deterministic control.
+    \item \textbf{Critical Pairs:} The central innovation is the concept of a \textbf{Critical Pair}. 
+    \item \textbf{Definition:} For a thread $T$, a critical pair is a tuple $(X, l)$, meaning: "There exists an execution where the thread attempts to acquire lock $l$ while \textit{already holding} the set of locks $X$".
+    \item \textbf{The Deadlock Theorem:} The authors prove that a deadlock occurs if and only if two threads have conflicting critical pairs:
+    \[
+    (X_1, l_1) \in \text{Crit}(C_1) \quad \text{and} \quad (X_2, l_2) \in \text{Crit}(C_2)
+    \]
+    Such that each thread holds the lock the other needs ($l_1 \in X_2$ and $l_2 \in X_1$) and their held locks do not overlap ($X_1 \cap X_2 = \emptyset$).
+    \item \textbf{Complexity:} This problem is proven to be decidable and in \textbf{NP}.
+\end{itemize}
+
+\section*{3. Implementation: Compositionality (Approx. 1.5 Minutes)}
+\textit{Goal: Explain how the theory becomes a tool that scales.}
+
+\begin{itemize}
+    \item \textbf{Abstract Interpretation:} The tool calculates critical pairs using abstract interpretation. It computes a summary for each method.
+    \item \textbf{Compositionality is Key:} Because the analysis is compositional, they do not need to re-analyze the whole app. When a developer submits a code change, the tool only analyzes the changed methods and their dependencies.
+    \item \textbf{Handling Android Specifics:} 
+    \begin{itemize}
+        \item They map Java \texttt{synchronized} blocks to the balanced locks in the abstract language.
+        \item They use heuristics for thread identity (e.g., \texttt{@UiThread}, \texttt{@WorkerThread}) to reduce false positives.
+    \end{itemize}
+    \item \textbf{Tooling:} The implementation is called \texttt{Starvation}, integrated into the \textbf{INFER} static analysis framework.
+\end{itemize}
+
+\section*{4. Results \& Evaluation (Approx. 0.5 Minutes)}
+\textit{Goal: Prove it actually works in the real world.}
+
+\begin{itemize}
+    \item \textbf{Deployment:} Deployed on all Android commits at Facebook for over 2 years.
+    \item \textbf{Performance:} Fast analysis times—median of 90 seconds per commit.
+    \item \textbf{Impact:} Detected over 500 deadlock reports. Crucially, developers fixed $\approx 54\%$ of these reports, indicating high trust and "actionability".
+\end{itemize}
+
+\section*{5. Conclusion \& Critique (Approx. 0.5 Minutes)}
+\textit{Goal: Summarize and show critical thinking.}
+
+\begin{itemize}
+    \item \textbf{Pros:} Successfully bridges the gap between theoretical guarantees (decidability) and industrial scale. The use of summaries makes it maintainable.
+    \item \textbf{Limitations/Cons:}
+    \begin{itemize}
+        \item It relies heavily on "balanced locking" (structured locking); unstructured locking breaks the model.
+        \item Compositionality can lead to false negatives if a deadlock spans across parts of the call graph not currently being analyzed.
+    \end{itemize}
+\end{itemize}
+
+\end{document}
